@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>HLS + DASH Debug Player</title>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
+
+<style>
+body {
+  margin: 0;
+  background: #0f172a;
+  color: white;
+  font-family: Arial;
+}
+
+.container {
+  max-width: 900px;
+  margin: auto;
+  padding: 15px;
+}
+
+.player-wrapper {
+  position: relative;
+  aspect-ratio: 16/9;
+  background: black;
+  border-radius: 12px;
+}
+
+video {
+  width: 100%;
+  height: 100%;
+}
+
+.controls {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+}
+
+input {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+}
+
+button {
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  background: #22c55e;
+  color: white;
+}
+
+.status {
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+.log {
+  margin-top: 10px;
+  background: #020617;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+@media(max-width:600px){
+  .controls { flex-direction: column; }
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <h3>HLS + DASH Debug Player</h3>
+
+  <div class="player-wrapper">
+    <video id="video" controls></video>
+  </div>
+
+  <div class="controls">
+    <input id="url" placeholder="Masukkan .m3u8 atau .mpd">
+    <button onclick="start()">Play</button>
+  </div>
+
+  <div class="status" id="status">Status: Idle</div>
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+const video = document.getElementById('video');
+const logBox = document.getElementById('log');
+const statusBox = document.getElementById('status');
+
+let hls, dash;
+
+function setStatus(s) {
+  statusBox.innerText = "Status: " + s;
+}
+
+function log(msg, type="info") {
+  const time = new Date().toLocaleTimeString();
+  const color = {
+    info: "#38bdf8",
+    error: "#ef4444",
+    warn: "#facc15"
+  };
+  logBox.innerHTML += `<div style="color:${color[type]}">[${time}] ${msg}</div>`;
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+async function check(url) {
+  try {
+    const res = await fetch(url);
+    log("HTTP Status: " + res.status);
+
+    if (!res.ok) {
+      log("HTTP error pada manifest", "error");
+      return false;
+    }
+    return true;
+  } catch (e) {
+    log("Fetch gagal (kemungkinan CORS)", "error");
+    return false;
+  }
+}
+
+function reset() {
+  if (hls) hls.destroy();
+  if (dash) dash.reset();
+}
+
+async function start() {
+  const url = document.getElementById('url').value;
+  if (!url) return;
+
+  logBox.innerHTML = "";
+  reset();
+
+  setStatus("Checking URL...");
+  const ok = await check(url);
+
+  if (!ok) {
+    setStatus("Error");
+    log("Tidak bisa akses manifest", "error");
+    return;
+  }
+
+  if (url.includes(".mpd")) {
+    playDASH(url);
+  } else {
+    playHLS(url);
+  }
+}
+
+function playHLS(url) {
+  setStatus("Loading HLS...");
+
+  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = url;
+    video.play();
+    setStatus("Playing (native)");
+    return;
+  }
+
+  if (Hls.isSupported()) {
+    hls = new Hls();
+
+    hls.loadSource(url);
+    hls.attachMedia(video);
+
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      log("Manifest parsed");
+      video.play();
+      setStatus("Playing");
+    });
+
+    hls.on(Hls.Events.FRAG_LOADED, (e, data) => {
+      log("Segment OK: " + data.frag.url);
+    });
+
+    hls.on(Hls.Events.ERROR, (e, data) => {
+      log(`HLS Error: ${data.type} - ${data.details}`, "error");
+
+      if (data.details.includes("fragLoadError")) {
+        log("Kemungkinan segment 404 / blocked", "warn");
+      }
+
+      if (data.details.includes("manifestLoadError")) {
+        log("Manifest gagal load", "warn");
+      }
+
+      if (data.type === "networkError") {
+        log("Kemungkinan CORS / koneksi", "warn");
+      }
+
+      if (data.fatal) {
+        setStatus("Fatal Error");
+        hls.destroy();
+      }
+    });
+  }
+}
+
+function playDASH(url) {
+  setStatus("Loading DASH...");
+
+  dash = dashjs.MediaPlayer().create();
+  dash.initialize(video, url, true);
+
+  dash.on("streamInitialized", () => {
+    log("DASH stream ready");
+    setStatus("Playing");
+  });
+
+  dash.on("error", (e) => {
+    log("DASH Error: " + e.error, "error");
+    setStatus("Error");
+  });
+
+  dash.on("fragmentLoadingCompleted", (e) => {
+    log("Segment OK: " + e.request.url);
+  });
+}
+
+// HTML5 video events
+video.addEventListener("waiting", () => setStatus("Buffering..."));
+video.addEventListener("playing", () => setStatus("Playing"));
+video.addEventListener("pause", () => setStatus("Paused"));
+video.addEventListener("error", () => {
+  log("Video element error", "error");
+  setStatus("Error");
+});
+</script>
+
+</body>
+</html>
