@@ -1,245 +1,380 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="robots" content="noindex, nofollow, noarchive">
-<title>HLS & DASH Debug Player</title>
-
+<title>Stream Player</title>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
-
 <style>
-body {
-  margin: 0;
-  background: #0f172a;
-  color: white;
-  font-family: Arial;
-}
+  :root {
+    --bg: #0a0f1e;
+    --surface: #111827;
+    --surface2: #1a2236;
+    --border: #1f2d47;
+    --accent: #3b82f6;
+    --accent2: #10b981;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --font: 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; padding: 20px; }
+  .container { max-width: 900px; margin: auto; }
 
-.container {
-  max-width: 900px;
-  margin: auto;
-  padding: 15px;
-}
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .logo { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: bold; color: #fff; }
+  h1 { font-size: 16px; color: var(--text); letter-spacing: 1px; }
+  .badge { margin-left: auto; font-size: 10px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); letter-spacing: 1px; }
 
-.player-wrapper {
-  position: relative;
-  aspect-ratio: 16/9;
-  background: black;
-  border-radius: 12px;
-}
+  .player-wrapper { position: relative; aspect-ratio: 16/9; background: #000; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+  video { width: 100%; height: 100%; display: block; }
 
-video {
-  width: 100%;
-  height: 100%;
-}
+  .overlay-message { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(0,0,0,0.8); font-size: 13px; color: var(--muted); pointer-events: none; transition: opacity .3s; }
+  .overlay-message.hidden { opacity: 0; }
+  .overlay-icon { font-size: 40px; opacity: 0.4; }
 
-.controls {
-  margin-top: 10px;
-  display: flex;
-  gap: 10px;
-}
+  .url-bar { margin-top: 12px; display: flex; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px; }
+  .url-bar input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-family: var(--font); font-size: 13px; padding: 6px 8px; }
+  .url-bar input::placeholder { color: var(--muted); }
+  .btn { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-family: var(--font); font-size: 12px; cursor: pointer; letter-spacing: 1px; transition: opacity .15s; white-space: nowrap; }
+  .btn:hover { opacity: 0.85; }
+  .btn.clear { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
 
-input {
-  flex: 1;
-  padding: 10px;
-  border-radius: 8px;
-  border: none;
-}
+  .diag-panel { margin-top: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .diag-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .tab { padding: 10px 18px; font-size: 11px; letter-spacing: 1px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; user-select: none; transition: color .15s; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
 
-button {
-  padding: 10px;
-  border-radius: 8px;
-  border: none;
-  background: #22c55e;
-  color: white;
-}
+  .status-bar { display: flex; align-items: center; gap: 12px; padding: 10px 14px; font-size: 11px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background .3s; }
+  .dot.playing { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .dot.error   { background: var(--danger); }
+  .dot.loading { background: var(--warn); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  #status-text { color: var(--text); }
+  .stat-items { margin-left: auto; display: flex; gap: 18px; }
+  .stat-item { color: var(--muted); }
+  .stat-item span { color: var(--text); }
 
-.status {
-  margin-top: 10px;
-  font-size: 14px;
-}
+  .log-area { padding: 10px; max-height: 220px; overflow-y: auto; font-size: 11px; line-height: 1.6; }
+  .log-area::-webkit-scrollbar { width: 4px; }
+  .log-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .log-line { padding: 1px 0; display: flex; gap: 8px; }
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-tag { flex-shrink: 0; font-size: 9px; padding: 1px 5px; border-radius: 3px; letter-spacing: .5px; align-self: start; margin-top: 2px; }
+  .tag-info  { background: #1e3a5f; color: #60a5fa; }
+  .tag-ok    { background: #14432a; color: #34d399; }
+  .tag-warn  { background: #3d2a05; color: #fbbf24; }
+  .tag-error { background: #3d1010; color: #f87171; }
+  .tag-diag  { background: #2d1f5a; color: #a78bfa; }
+  .log-msg { color: var(--text); word-break: break-all; }
 
-.log {
-  margin-top: 10px;
-  background: #020617;
-  padding: 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  max-height: 200px;
-  overflow-y: auto;
-}
+  .diagnose-area { padding: 14px; font-size: 12px; }
+  .diag-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; line-height: 1.7; }
+  .diag-box h3 { font-size: 11px; letter-spacing: 1px; color: var(--accent); margin-bottom: 8px; }
+  .diag-box p { color: #94a3b8; font-size: 11px; }
+  .diag-box code { background: #0d1526; border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; color: #7dd3fc; font-size: 10px; }
 
-@media(max-width:600px){
-  .controls { flex-direction: column; }
-}
+  .tracks-area { padding: 14px; }
+  .track-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .track-table th { text-align: left; color: var(--muted); letter-spacing: 1px; font-size: 10px; padding: 0 8px 8px; border-bottom: 1px solid var(--border); }
+  .track-table td { padding: 7px 8px; border-bottom: 1px solid rgba(31,45,71,0.5); color: #94a3b8; }
+  .track-table td.active { color: var(--accent2); }
+  .track-table tr.selected td { background: rgba(59,130,246,0.07); }
+  .track-table tr:hover td { background: var(--surface2); cursor: pointer; }
+  .empty-tracks { color: var(--muted); font-size: 11px; padding: 16px; text-align: center; }
+
+  @media(max-width: 600px) { .url-bar { flex-direction: column; } .stat-items { display: none; } }
 </style>
 </head>
-
 <body>
-
 <div class="container">
-  <h3>HLS & DASH Debug Player</h3>
+  <header>
+    <div class="logo">▶</div>
+    <h1>Stream PLAYER</h1>
+    <div class="badge">v2.1</div>
+  </header>
 
   <div class="player-wrapper">
     <video id="video" controls></video>
+    <div class="overlay-message" id="overlay">
+      <div class="overlay-icon">⬡</div>
+      <div>Masukkan URL stream di bawah</div>
+    </div>
   </div>
 
-  <div class="controls">
-    <input id="url" placeholder="Masukkan .m3u8 atau .mpd">
-    <button onclick="start()">Play</button>
+  <div class="url-bar">
+    <input id="url" type="text" placeholder="https://example.com/stream.m3u8  atau  stream.mpd" />
+    <button class="btn clear" onclick="clearPlayer()">RESET</button>
+    <button class="btn" onclick="start()">▶ PLAY</button>
   </div>
 
-  <div class="status" id="status">Status: Idle</div>
-  <div class="log" id="log"></div>
+  <div class="diag-panel">
+    <div class="diag-tabs">
+      <div class="tab active" onclick="switchTab('log')">LOG</div>
+      <div class="tab" onclick="switchTab('diagnose')">DIAGNOSA</div>
+      <div class="tab" onclick="switchTab('tracks')">TRACKS</div>
+    </div>
+
+    <div class="status-bar">
+      <div class="dot" id="dot"></div>
+      <span id="status-text">Idle — belum ada stream</span>
+      <div class="stat-items">
+        <div class="stat-item">PROTOCOL: <span id="stat-proto">—</span></div>
+        <div class="stat-item">LEVEL: <span id="stat-level">—</span></div>
+        <div class="stat-item">SEG: <span id="stat-seg">0</span></div>
+      </div>
+    </div>
+
+    <div class="tab-content active" id="tab-log">
+      <div class="log-area" id="log"></div>
+    </div>
+
+    <div class="tab-content" id="tab-diagnose">
+      <div class="diagnose-area">
+        <div class="diag-box">
+          <h3>KENAPA TIDAK PAKAI PRE-CHECK FETCH?</h3>
+          <p>
+            Versi sebelumnya melakukan <code>fetch(url, {method:'HEAD'})</code> sebelum play —
+            ini justru masalahnya. Request HEAD dari origin <code>127.0.0.1</code> memicu 403
+            lebih cepat. HLS.js melakukan <code>GET</code> biasa tanpa header tambahan,
+            sehingga lebih mungkin lolos origin check CDN. Versi ini langsung lempar ke
+            HLS.js tanpa pre-check apapun.
+          </p>
+        </div>
+        <div class="diag-box">
+          <h3>ANALISIS: ORIGIN WHITELIST CDN</h3>
+          <p>
+            Server <code>video.detik.com</code> memeriksa header <code>origin</code> dari
+            request. Domain seperti <code>globetv.app</code> ada di whitelist → dapat
+            <code>access-control-allow-origin: *</code>. Origin lain → 403.
+            Jika HLS.js masih 403, berarti CDN memblokir originmu secara spesifik dan
+            butuh backend proxy.
+          </p>
+        </div>
+        <div class="diag-box">
+          <h3>JIKA MASIH GAGAL</h3>
+          <p>
+            Coba deploy sitemu ke domain publik (Vercel/Netlify) dan test dari sana —
+            bisa jadi CDN hanya memblokir <code>localhost</code>/<code>127.0.0.1</code>.
+            Jika masih 403 dari domain publik, butuh backend proxy yang forward request
+            dengan origin yang benar.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-tracks">
+      <div class="tracks-area">
+        <div id="tracks-content">
+          <div class="empty-tracks">Belum ada tracks — muat stream terlebih dahulu</div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
 const video = document.getElementById('video');
-const logBox = document.getElementById('log');
-const statusBox = document.getElementById('status');
+const logEl = document.getElementById('log');
+const dot   = document.getElementById('dot');
+let hlsInstance, dashInstance;
+let segCount = 0;
 
-let hls, dash;
-
-function setStatus(s) {
-  statusBox.innerText = "Status: " + s;
+function log(msg, type = 'info') {
+  const time = new Date().toLocaleTimeString('id-ID', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const tags = { info:'INFO', ok:'OK', warn:'WARN', error:'ERR', diag:'DIAG' };
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML =
+    `<span class="log-time">${time}</span>` +
+    `<span class="log-tag tag-${type}">${tags[type]||'INFO'}</span>` +
+    `<span class="log-msg">${msg}</span>`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
 }
 
-function log(msg, type="info") {
-  const time = new Date().toLocaleTimeString();
-  const color = {
-    info: "#38bdf8",
-    error: "#ef4444",
-    warn: "#facc15"
-  };
-  logBox.innerHTML += `<div style="color:${color[type]}">[${time}] ${msg}</div>`;
-  logBox.scrollTop = logBox.scrollHeight;
+function setStatus(text, state = 'idle') {
+  document.getElementById('status-text').textContent = text;
+  dot.className = 'dot ' + (state==='playing'?'playing':state==='error'?'error':state==='loading'?'loading':'');
 }
 
-async function check(url) {
-  try {
-    const res = await fetch(url);
-    log("HTTP Status: " + res.status);
-
-    if (!res.ok) {
-      log("HTTP error pada manifest", "error");
-      return false;
-    }
-    return true;
-  } catch (e) {
-    log("Fetch gagal (kemungkinan CORS)", "error");
-    return false;
-  }
+function setStat(proto, level) {
+  if (proto !== null && proto !== undefined) document.getElementById('stat-proto').textContent = proto;
+  if (level !== undefined) document.getElementById('stat-level').textContent = level;
 }
 
-function reset() {
-  if (hls) hls.destroy();
-  if (dash) dash.reset();
+function incSeg() {
+  segCount++;
+  document.getElementById('stat-seg').textContent = segCount;
 }
 
-async function start() {
-  const url = document.getElementById('url').value;
-  if (!url) return;
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', ['log','diagnose','tracks'][i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => {
+    c.classList.toggle('active', c.id === 'tab-' + name);
+  });
+}
 
-  logBox.innerHTML = "";
-  reset();
+function clearPlayer() {
+  if (hlsInstance)  { hlsInstance.destroy();  hlsInstance  = null; }
+  if (dashInstance) { dashInstance.reset();   dashInstance = null; }
+  video.src = '';
+  logEl.innerHTML = '';
+  segCount = 0;
+  document.getElementById('stat-seg').textContent   = '0';
+  document.getElementById('stat-proto').textContent = '—';
+  document.getElementById('stat-level').textContent = '—';
+  document.getElementById('tracks-content').innerHTML = '<div class="empty-tracks">Belum ada tracks</div>';
+  setStatus('Idle — belum ada stream');
+  document.getElementById('overlay').classList.remove('hidden');
+}
 
-  setStatus("Checking URL...");
-  const ok = await check(url);
-
-  if (!ok) {
-    setStatus("Error");
-    log("Tidak bisa akses manifest", "error");
+function renderTracks(levels, currentLevel) {
+  if (!levels || levels.length === 0) {
+    document.getElementById('tracks-content').innerHTML = '<div class="empty-tracks">Tidak ada multi-bitrate track</div>';
     return;
   }
+  let html = `<table class="track-table"><thead><tr>
+    <th>#</th><th>RESOLUSI</th><th>BITRATE</th><th>CODEC</th><th>STATUS</th>
+  </tr></thead><tbody>`;
+  levels.forEach((l, i) => {
+    const active = i === currentLevel;
+    const res    = l.width && l.height ? `${l.width}×${l.height}` : '—';
+    const br     = l.bitrate ? Math.round(l.bitrate / 1000) + ' kbps' : '—';
+    const codec  = l.videoCodec || l.attrs?.CODECS || '—';
+    html += `<tr class="${active?'selected':''}" onclick="switchLevel(${i})">
+      <td class="${active?'active':''}">${i}</td>
+      <td>${res}</td><td>${br}</td>
+      <td style="font-size:10px">${codec}</td>
+      <td class="${active?'active':''}">${active?'● AKTIF':'○'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table><p style="font-size:10px;color:var(--muted);padding:8px 14px">Klik baris untuk pindah kualitas manual</p>';
+  document.getElementById('tracks-content').innerHTML = html;
+}
 
-  if (url.includes(".mpd")) {
+function switchLevel(i) {
+  if (hlsInstance) { hlsInstance.currentLevel = i; log(`Manual switch ke level ${i}`, 'info'); }
+}
+
+// ── Main: langsung play, TANPA pre-check fetch/HEAD ───────────────────────────
+function start() {
+  const url = document.getElementById('url').value.trim();
+  if (!url) { log('URL kosong', 'warn'); return; }
+
+  clearPlayer();
+  document.getElementById('url').value = url;
+  document.getElementById('overlay').classList.add('hidden');
+
+  log('URL: ' + url, 'info');
+  log('Bypass pre-check — langsung ke HLS.js/dash.js tanpa fetch HEAD', 'diag');
+
+  if (url.includes('.mpd')) {
+    setStat('DASH');
     playDASH(url);
   } else {
+    setStat('HLS');
     playHLS(url);
   }
 }
 
+// ── HLS ───────────────────────────────────────────────────────────────────────
 function playHLS(url) {
-  setStatus("Loading HLS...");
+  setStatus('Memuat HLS…', 'loading');
 
+  // Safari/iOS: native HLS, tidak ada CORS issue sama sekali
   if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    log('Native HLS (Safari/iOS)', 'diag');
     video.src = url;
-    video.play();
-    setStatus("Playing (native)");
+    video.play().catch(e => log('Autoplay diblokir: ' + e.message, 'warn'));
     return;
   }
 
-  if (Hls.isSupported()) {
-    hls = new Hls();
-
-    hls.loadSource(url);
-    hls.attachMedia(video);
-
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      log("Manifest parsed");
-      video.play();
-      setStatus("Playing");
-    });
-
-    hls.on(Hls.Events.FRAG_LOADED, (e, data) => {
-      log("Segment OK: " + data.frag.url);
-    });
-
-    hls.on(Hls.Events.ERROR, (e, data) => {
-      log(`HLS Error: ${data.type} - ${data.details}`, "error");
-
-      if (data.details.includes("fragLoadError")) {
-        log("Kemungkinan segment 404 / blocked", "warn");
-      }
-
-      if (data.details.includes("manifestLoadError")) {
-        log("Manifest gagal load", "warn");
-      }
-
-      if (data.type === "networkError") {
-        log("Kemungkinan CORS / koneksi", "warn");
-      }
-
-      if (data.fatal) {
-        setStatus("Fatal Error");
-        hls.destroy();
-      }
-    });
+  if (!Hls.isSupported()) {
+    log('HLS.js tidak didukung browser ini', 'error');
+    setStatus('Error — browser tidak support', 'error');
+    return;
   }
+
+  hlsInstance = new Hls({ enableWorker: true });
+  hlsInstance.loadSource(url);
+  hlsInstance.attachMedia(video);
+
+  hlsInstance.on(Hls.Events.MANIFEST_PARSED, (e, data) => {
+    log(`Manifest OK — ${data.levels.length} level(s) ditemukan`, 'ok');
+    setStat(null, data.levels.length > 1 ? `ABR(${data.levels.length})` : '1');
+    renderTracks(data.levels, hlsInstance.currentLevel);
+    video.play().catch(e => log('Autoplay diblokir: ' + e.message, 'warn'));
+  });
+
+  hlsInstance.on(Hls.Events.LEVEL_SWITCHED, (e, data) => {
+    log(`Level switch → ${data.level}`, 'info');
+    setStat(null, data.level);
+    renderTracks(hlsInstance.levels, data.level);
+  });
+
+  hlsInstance.on(Hls.Events.FRAG_LOADED, (e, data) => {
+    incSeg();
+    const kb = Math.round((data.frag.stats?.total || 0) / 1024);
+    log(`SEG #${segCount} OK${kb ? ' ('+kb+' KB)' : ''} — ${data.frag.url.split('/').pop()}`, 'ok');
+  });
+
+  hlsInstance.on(Hls.Events.ERROR, (e, data) => {
+    log(`[${data.type}] ${data.details}`, data.fatal ? 'error' : 'warn');
+
+    if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR) {
+      const code = data.response?.code;
+      if (code === 403) {
+        log('403 — origin masih diblokir CDN. Coba deploy ke domain publik dulu.', 'diag');
+      } else if (code === 0) {
+        log('Status 0 — CORS blocked atau network error', 'diag');
+      }
+    }
+    if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
+      log('Segment gagal — URL mungkin sudah expired', 'warn');
+    }
+    if (!data.fatal) {
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance.startLoad();
+      return;
+    }
+    setStatus('Fatal: ' + data.details, 'error');
+    if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+      log('Mencoba recoverMediaError…', 'info');
+      hlsInstance.recoverMediaError();
+    } else {
+      hlsInstance.destroy();
+    }
+  });
 }
 
+// ── DASH ──────────────────────────────────────────────────────────────────────
 function playDASH(url) {
-  setStatus("Loading DASH...");
-
-  dash = dashjs.MediaPlayer().create();
-  dash.initialize(video, url, true);
-
-  dash.on("streamInitialized", () => {
-    log("DASH stream ready");
-    setStatus("Playing");
-  });
-
-  dash.on("error", (e) => {
-    log("DASH Error: " + e.error, "error");
-    setStatus("Error");
-  });
-
-  dash.on("fragmentLoadingCompleted", (e) => {
-    log("Segment OK: " + e.request.url);
-  });
+  setStatus('Memuat DASH…', 'loading');
+  log('Inisialisasi dash.js…', 'info');
+  dashInstance = dashjs.MediaPlayer().create();
+  dashInstance.initialize(video, url, true);
+  dashInstance.on('streamInitialized', () => { log('DASH stream siap', 'ok'); setStatus('Playing', 'playing'); });
+  dashInstance.on('fragmentLoadingCompleted', (e) => { incSeg(); log(`SEG #${segCount} OK — ${(e.request?.url||'').split('/').pop()}`, 'ok'); });
+  dashInstance.on('error', (e) => { log('DASH Error: ' + JSON.stringify(e.error), 'error'); setStatus('Error', 'error'); });
+  dashInstance.on('qualityChangeRendered', (e) => { log(`Quality → ${e.newQuality} (${e.mediaType})`, 'info'); setStat(null, e.newQuality); });
 }
 
-// HTML5 video events
-video.addEventListener("waiting", () => setStatus("Buffering..."));
-video.addEventListener("playing", () => setStatus("Playing"));
-video.addEventListener("pause", () => setStatus("Paused"));
-video.addEventListener("error", () => {
-  log("Video element error", "error");
-  setStatus("Error");
-});
-</script>
+// ── Video events ──────────────────────────────────────────────────────────────
+video.addEventListener('waiting', () => setStatus('Buffering…', 'loading'));
+video.addEventListener('playing', () => { setStatus('Playing', 'playing'); document.getElementById('overlay').classList.add('hidden'); });
+video.addEventListener('pause',   () => setStatus('Paused'));
+video.addEventListener('ended',   () => setStatus('Selesai'));
+video.addEventListener('error',   () => { log('Video element error: ' + (video.error?.message||'unknown'), 'error'); setStatus('Error', 'error'); });
 
+document.getElementById('url').addEventListener('keydown', e => { if (e.key === 'Enter') start(); });
+</script>
 </body>
 </html>
